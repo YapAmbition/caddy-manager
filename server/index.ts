@@ -170,7 +170,8 @@ app.post(`${BASE_PATH}/api/reload`, async (_req, res) => {
 const distPath = path.join(__dirname, '..', 'dist');
 if (fs.existsSync(distPath)) {
   app.use(BASE_PATH, express.static(distPath));
-  app.get(`${BASE_PATH}/*`, (_req, res) => {
+  // SPA fallback: any non-API request under BASE_PATH returns index.html
+  app.use(BASE_PATH, (_req, res) => {
     res.sendFile(path.join(distPath, 'index.html'));
   });
 }

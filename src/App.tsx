@@ -216,11 +216,13 @@ function App() {
   };
 
   const handleSaveRoutes = () => {
+    if (!confirm('确定保存并应用配置？此操作将立即更新 Caddy 路由。')) return;
     const content = generateCaddyfile(port, routes);
     saveConfig(content, description || `Update routes (${routes.length} rules)`);
   };
 
   const handleSaveRaw = () => {
+    if (!confirm('确定保存并应用配置？此操作将立即更新 Caddy 路由。')) return;
     saveConfig(caddyfile, description || 'Manual edit');
   };
 
@@ -247,6 +249,10 @@ function App() {
 
   const handleFormSave = () => {
     if (!editingRoute) return;
+    if (!editingRoute.comment) {
+      showToast('描述不能为空', 'error');
+      return;
+    }
     if (!editingRoute.matchPath || !editingRoute.target) {
       showToast('路径和目标地址不能为空', 'error');
       return;
@@ -302,11 +308,8 @@ function App() {
   return (
     <div className="app">
       <header className="header">
-        <h1>⚡ Caddy Manager</h1>
-        <div className="status">
-          <span className="status-dot"></span>
-          <span>:{port} · localhost:2019</span>
-        </div>
+        <h1>Caddy Manager</h1>
+        <div className="status">:{port} active</div>
       </header>
 
       <div className="tabs">
@@ -327,14 +330,14 @@ function App() {
           <div className="routes-header">
             <input
               className="description-input"
-              placeholder="变更描述（可选）..."
+              placeholder="变更描述（必填）..."
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               style={{ flex: 1 }}
             />
             <div className="routes-header-actions">
               <button className="btn btn-ghost" onClick={handleAddRoute}>+ Add Route</button>
-              <button className="btn btn-primary" onClick={handleSaveRoutes} disabled={loading}>
+              <button className="btn btn-primary" onClick={handleSaveRoutes} disabled={loading || !description.trim()}>
                 {loading ? '...' : '⬆ Save & Apply'}
               </button>
             </div>
@@ -351,8 +354,10 @@ function App() {
                 <div key={route.id} className="route-card">
                   <div className="route-card-header">
                     <div className="route-path">
+                      <span style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                        {route.comment || route.matchPath}
+                      </span>
                       <span className="route-badge">{route.stripPrefix ? 'STRIP' : 'KEEP'}</span>
-                      <code>{route.matchPath}*</code>
                     </div>
                     <div className="route-card-actions">
                       <button className="btn-icon" onClick={() => handleEditRoute(route)} title="Edit">✏️</button>
@@ -361,17 +366,18 @@ function App() {
                   </div>
                   <div className="route-card-body">
                     <div className="route-target">
-                      <span className="route-arrow">→</span>
+                      <code style={{ color: 'var(--text-secondary)' }}>{route.matchPath}*</code>
+                      <span className="route-arrow">►</span>
                       <code>{route.target}</code>
                     </div>
+                    {route.comment && <span className="route-comment">{route.comment}</span>}
                     {route.headers && route.headers.length > 0 && (
                       <div className="route-headers">
                         {route.headers.map((h, idx) => (
-                          <span key={idx} className="route-header-tag">header_up {h.key}: {h.value}</span>
+                          <span key={idx} className="route-header-tag">{h.key}: {h.value}</span>
                         ))}
                       </div>
                     )}
-                    {route.comment && <div className="route-comment">{route.comment}</div>}
                   </div>
                 </div>
               ))}
@@ -383,6 +389,16 @@ function App() {
             <div className="modal-overlay" onClick={() => setShowForm(false)}>
               <div className="modal" onClick={(e) => e.stopPropagation()}>
                 <h3>{editingRoute.id ? 'Edit Route' : 'Add Route'}</h3>
+                <div className="form-group">
+                  <label>描述 *</label>
+                  <input
+                    type="text"
+                    value={editingRoute.comment || ''}
+                    onChange={(e) => setEditingRoute({ ...editingRoute, comment: e.target.value })}
+                    placeholder="例如：md查看器、管理面板、前端项目..."
+                  />
+                  <span className="form-hint">必填，用于标识这条路由的用途</span>
+                </div>
                 <div className="form-group">
                   <label>Match Path</label>
                   <input
@@ -417,15 +433,6 @@ function App() {
                       ? `${editingRoute.matchPath}/foo → target receives /foo`
                       : `${editingRoute.matchPath}/foo → target receives ${editingRoute.matchPath}/foo`}
                   </span>
-                </div>
-                <div className="form-group">
-                  <label>Comment (optional)</label>
-                  <input
-                    type="text"
-                    value={editingRoute.comment || ''}
-                    onChange={(e) => setEditingRoute({ ...editingRoute, comment: e.target.value })}
-                    placeholder="Description for this route"
-                  />
                 </div>
                 <div className="form-group">
                   <label>Headers (header_up)</label>
@@ -489,7 +496,7 @@ function App() {
         <div>
           <input
             className="description-input"
-            placeholder="变更描述（可选）..."
+            placeholder="变更描述（必填）..."
             value={description}
             onChange={(e) => setDescription(e.target.value)}
           />
@@ -498,7 +505,7 @@ function App() {
               <span className="filename">Caddyfile</span>
               <div className="editor-actions">
                 <button className="btn btn-ghost" onClick={fetchConfig} disabled={loading}>↻ Refresh</button>
-                <button className="btn btn-primary" onClick={handleSaveRaw} disabled={loading}>
+                <button className="btn btn-primary" onClick={handleSaveRaw} disabled={loading || !description.trim()}>
                   {loading ? '...' : '⬆ Save & Apply'}
                 </button>
               </div>
@@ -538,14 +545,22 @@ function App() {
             </div>
           )}
           {previewSnapshot && (
-            <div className="diff-view">
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-                <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
-                  Preview: {previewSnapshot.description} ({formatTime(previewSnapshot.timestamp)})
-                </span>
-                <button className="btn btn-ghost" onClick={() => setPreviewSnapshot(null)}>✕ Close</button>
+            <div className="modal-overlay" onClick={() => setPreviewSnapshot(null)}>
+              <div className="modal" onClick={(e) => e.stopPropagation()} style={{ width: 600, maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                  <div>
+                    <h3 style={{ margin: 0 }}>{previewSnapshot.description}</h3>
+                    <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{formatTime(previewSnapshot.timestamp)}</span>
+                  </div>
+                  <button className="btn btn-ghost" onClick={() => setPreviewSnapshot(null)}>✕</button>
+                </div>
+                <pre style={{ flex: 1, overflow: 'auto', background: 'var(--bg-content)', padding: 16, borderRadius: 12, border: '2px solid var(--border-light)', fontSize: 12, lineHeight: 1.6, fontFamily: "'JetBrains Mono', monospace" }}>{previewSnapshot.caddyfile}</pre>
+                <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end' }}>
+                  <button className="btn btn-danger" onClick={() => handleRollback(previewSnapshot.id)} disabled={loading}>
+                    Rollback to this version
+                  </button>
+                </div>
               </div>
-              <pre>{previewSnapshot.caddyfile}</pre>
             </div>
           )}
         </div>

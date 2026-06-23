@@ -1,6 +1,6 @@
 {
   "server": {
-    "port": 6099
+    "port": 7099
   },
   "caddy": {
     "caddyfilePath": "/Users/shenzhencheng/Documents/tool/caddy/Caddyfile",
@@ -8,7 +8,7 @@
   },
   "frontend": {
     "basePath": "/caddy",
-    "port": 6100
+    "port": 7100
   },
   "history": {
     "maxSnapshots": 50

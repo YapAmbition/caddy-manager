@@ -1,0 +1,16 @@
+{
+  "server": {
+    "port": 7099
+  },
+  "caddy": {
+    "caddyfilePath": "/Users/shenzhencheng/Documents/tool/caddy/Caddyfile",
+    "adminApi": "http://localhost:2019"
+  },
+  "frontend": {
+    "basePath": "/caddy",
+    "port": 7100
+  },
+  "history": {
+    "maxSnapshots": 50
+  }
+}

@@ -1,0 +1,8 @@
+:80 {
+    handle_path /report* {
+        reverse_proxy localhost:7199 {
+            header_up Host {upstream_hostport}
+            header_up X-Real_IP {remote_host}
+        }
+    }
+}

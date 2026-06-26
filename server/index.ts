@@ -92,6 +92,11 @@ app.get(`${BASE_PATH}/api/config`, (_req, res) => {
   res.json({ caddyfile: getCurrentCaddyfile() });
 });
 
+// Get public settings (non-sensitive)
+app.get(`${BASE_PATH}/api/settings`, (_req, res) => {
+  res.json({ publicUrl: config.caddy.publicUrl || 'http://localhost' });
+});
+
 // Save new config
 app.post(`${BASE_PATH}/api/config`, async (req, res) => {
   const { caddyfile, description } = req.body;
@@ -164,6 +169,16 @@ app.post(`${BASE_PATH}/api/reload`, async (_req, res) => {
     return res.status(500).json({ error: result.error });
   }
   res.json({ success: true, message: 'Reloaded successfully' });
+});
+
+// Open Caddyfile location in Finder (macOS only)
+app.post(`${BASE_PATH}/api/open-config-dir`, (_req, res) => {
+  try {
+    execSync(`open -R "${CURRENT_FILE}"`, { timeout: 5000 });
+    res.json({ success: true });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // Serve frontend static files in production

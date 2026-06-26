@@ -4,7 +4,8 @@
   },
   "caddy": {
     "caddyfilePath": "/Users/shenzhencheng/Documents/tool/caddy/Caddyfile",
-    "adminApi": "http://localhost:2019"
+    "adminApi": "http://localhost:2019",
+    "publicUrl": "http://localhost"
   },
   "frontend": {
     "basePath": "/caddy",

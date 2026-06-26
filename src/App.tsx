@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import ReactDiffViewer, { DiffMethod } from 'react-diff-viewer-continued';
 import './index.css';
 
 declare const __BASE_PATH__: string;
@@ -158,6 +159,20 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState<Toast | null>(null);
   const [previewSnapshot, setPreviewSnapshot] = useState<HistoryEntry | null>(null);
+  const [publicUrl, setPublicUrl] = useState('http://localhost');
+  const [savedRoutes, setSavedRoutes] = useState<RouteRule[]>([]);
+  const hasUnsavedChanges = JSON.stringify(routes) !== JSON.stringify(savedRoutes);
+  const [showDiff, setShowDiff] = useState(false);
+
+  // Prevent background scroll when modal is open
+  useEffect(() => {
+    if (showDiff || showForm || previewSnapshot) {
+      document.body.classList.add('modal-open');
+    } else {
+      document.body.classList.remove('modal-open');
+    }
+    return () => document.body.classList.remove('modal-open');
+  }, [showDiff, showForm, previewSnapshot]);
 
   const showToast = (message: string, type: 'success' | 'error') => {
     setToast({ message, type });
@@ -172,6 +187,7 @@ function App() {
       const parsed = parseCaddyfile(data.caddyfile);
       setPort(parsed.port);
       setRoutes(parsed.routes);
+      setSavedRoutes(parsed.routes);
     } catch {
       showToast('Failed to fetch config', 'error');
     }
@@ -187,10 +203,32 @@ function App() {
     }
   }, []);
 
+  const fetchSettings = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/settings`);
+      const data = await res.json();
+      setPublicUrl(data.publicUrl || 'http://localhost');
+    } catch {
+      // fallback to default
+    }
+  }, []);
+
   useEffect(() => {
     fetchConfig();
     fetchHistory();
-  }, [fetchConfig, fetchHistory]);
+    fetchSettings();
+  }, [fetchConfig, fetchHistory, fetchSettings]);
+
+  // Warn before leaving page with unsaved changes
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges) {
+        e.preventDefault();
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hasUnsavedChanges]);
 
   const saveConfig = async (content: string, desc: string) => {
     setLoading(true);
@@ -299,6 +337,12 @@ function App() {
     }
   };
 
+  const getRouteUrl = (matchPath: string) => {
+    const base = publicUrl.replace(/\/$/, '');
+    const p = matchPath.startsWith('/') ? matchPath : '/' + matchPath;
+    return `${base}${p}`;
+  };
+
   const formatTime = (ts: number) => {
     return new Date(ts).toLocaleString('zh-CN', {
       month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
@@ -308,20 +352,29 @@ function App() {
   return (
     <div className="app">
       <header className="header">
-        <h1>Caddy Manager</h1>
-        <div className="status">:{port} active</div>
+        <div className="header-left">
+          <h1>Caddy Manager</h1>
+          <span className="header-subtitle">反向代理配置管理面板</span>
+        </div>
+        <div className="header-right">
+          <div className="status">:{port} active</div>
+          {routes.length > 0 && <div className="route-count">{routes.length} routes</div>}
+        </div>
       </header>
 
       <div className="tabs">
         <button className={`tab ${activeTab === 'routes' ? 'active' : ''}`} onClick={() => setActiveTab('routes')}>
           Routes
         </button>
-        <button className={`tab ${activeTab === 'raw' ? 'active' : ''}`} onClick={() => { setActiveTab('raw'); setCaddyfile(generateCaddyfile(port, routes)); }}>
-          Raw
+        <button className={`tab ${activeTab === 'raw' ? 'active' : ''}`} onClick={() => { setActiveTab('raw'); fetchConfig(); }}>
+          Preview
         </button>
         <button className={`tab ${activeTab === 'history' ? 'active' : ''}`} onClick={() => { setActiveTab('history'); fetchHistory(); }}>
           History ({history.length})
         </button>
+        {activeTab === 'routes' && (
+          <button className="btn btn-ghost add-route-btn" onClick={handleAddRoute}>+ Add Route</button>
+        )}
       </div>
 
       {/* ===== Routes Tab ===== */}
@@ -336,17 +389,28 @@ function App() {
               style={{ flex: 1 }}
             />
             <div className="routes-header-actions">
-              <button className="btn btn-ghost" onClick={handleAddRoute}>+ Add Route</button>
-              <button className="btn btn-primary" onClick={handleSaveRoutes} disabled={loading || !description.trim()}>
-                {loading ? '...' : '⬆ Save & Apply'}
+              <button className={`btn ${hasUnsavedChanges ? 'btn-warning' : 'btn-primary'}`} onClick={handleSaveRoutes} disabled={loading || !description.trim()}>
+                {loading ? '...' : hasUnsavedChanges ? '⬆ 有修改 · 保存' : '⬆ Save & Apply'}
               </button>
             </div>
           </div>
 
+          {hasUnsavedChanges && (
+            <div className="unsaved-banner">
+              <span className="unsaved-icon">⚠️</span>
+              <span className="unsaved-text">你有未保存的修改，请点击 Save & Apply 应用配置</span>
+              <button className="unsaved-preview-btn" onClick={() => setShowDiff(true)}>
+                🔍 预览
+              </button>
+            </div>
+          )}
+
           {routes.length === 0 ? (
             <div className="empty-state">
               <div className="icon">🛤️</div>
-              <p>No routes configured. Click "Add Route" to create one.</p>
+              <h2>还没有配置路由</h2>
+              <p>点击下方按钮添加第一条路由，开始管理你的反向代理</p>
+              <button className="btn btn-primary" onClick={handleAddRoute} style={{ marginTop: 16 }}>+ Add Route</button>
             </div>
           ) : (
             <div className="route-list">
@@ -357,9 +421,11 @@ function App() {
                       <span style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-primary)' }}>
                         {route.comment || route.matchPath}
                       </span>
-                      <span className="route-badge">{route.stripPrefix ? 'STRIP' : 'KEEP'}</span>
                     </div>
                     <div className="route-card-actions">
+                      <a className="route-open-btn" href={getRouteUrl(route.matchPath)} target="_blank" rel="noopener noreferrer" title="Open in new tab">
+                        ↗
+                      </a>
                       <button className="btn-icon" onClick={() => handleEditRoute(route)} title="Edit">✏️</button>
                       <button className="btn-icon" onClick={() => handleDeleteRoute(route.id)} title="Delete">🗑️</button>
                     </div>
@@ -368,9 +434,8 @@ function App() {
                     <div className="route-target">
                       <code style={{ color: 'var(--text-secondary)' }}>{route.matchPath}*</code>
                       <span className="route-arrow">►</span>
-                      <code>{route.target}</code>
+                      <code>{route.target}{!route.stripPrefix ? route.matchPath : ''}</code>
                     </div>
-                    {route.comment && <span className="route-comment">{route.comment}</span>}
                     {route.headers && route.headers.length > 0 && (
                       <div className="route-headers">
                         {route.headers.map((h, idx) => (
@@ -491,29 +556,32 @@ function App() {
         </div>
       )}
 
-      {/* ===== Raw Tab ===== */}
+      {/* ===== Preview Tab ===== */}
       {activeTab === 'raw' && (
         <div>
-          <input
-            className="description-input"
-            placeholder="变更描述（必填）..."
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-          />
           <div className="editor-container">
             <div className="editor-toolbar">
-              <span className="filename">Caddyfile</span>
+              <span className="filename">Caddyfile (只读)</span>
               <div className="editor-actions">
                 <button className="btn btn-ghost" onClick={fetchConfig} disabled={loading}>↻ Refresh</button>
-                <button className="btn btn-primary" onClick={handleSaveRaw} disabled={loading || !description.trim()}>
-                  {loading ? '...' : '⬆ Save & Apply'}
+                <button
+                  className="btn btn-ghost"
+                  onClick={async () => {
+                    try {
+                      await fetch(`${API_BASE}/open-config-dir`, { method: 'POST' });
+                    } catch (e) {
+                      showToast('打开失败', 'error');
+                    }
+                  }}
+                >
+                  📂 打开文件位置
                 </button>
               </div>
             </div>
             <textarea
               className="editor"
               value={caddyfile}
-              onChange={(e) => setCaddyfile(e.target.value)}
+              readOnly
               spellCheck={false}
             />
           </div>
@@ -526,7 +594,8 @@ function App() {
           {history.length === 0 ? (
             <div className="empty-state">
               <div className="icon">📭</div>
-              <p>No history yet. Save a config to create the first snapshot.</p>
+              <h2>暂无历史记录</h2>
+              <p>保存一次配置后，这里会显示所有版本快照</p>
             </div>
           ) : (
             <div className="history-list">
@@ -563,6 +632,32 @@ function App() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {showDiff && (
+        <div className="modal-overlay">
+          <div className="modal diff-modal">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h3 style={{ margin: 0 }}>配置变更预览</h3>
+              <button className="btn-icon" onClick={() => setShowDiff(false)} style={{ fontSize: '1.2rem' }}>✕</button>
+            </div>
+            <div className="diff-container">
+              <ReactDiffViewer
+                oldValue={generateCaddyfile(port, savedRoutes)}
+                newValue={generateCaddyfile(port, routes)}
+                splitView={false}
+                leftTitle="修改前"
+                rightTitle="修改后"
+                compareMethod={DiffMethod.LINES}
+                useDarkTheme={false}
+                showDiffOnly={false}
+              />
+            </div>
+            <div className="modal-actions">
+              <button className="btn btn-ghost" onClick={() => setShowDiff(false)}>关闭</button>
+            </div>
+          </div>
         </div>
       )}
 

@@ -39,7 +39,8 @@ npm start
   },
   "caddy": {
     "caddyfilePath": "/path/to/Caddyfile",  // Caddy 配置文件路径
-    "adminApi": "http://localhost:2019"       // Caddy Admin API 地址
+    "adminApi": "http://localhost:2019",      // Caddy Admin API 地址
+    "publicUrl": "http://localhost"           // Caddy 对外访问地址（用于路由跳转按钮）
   },
   "frontend": {
     "basePath": "/caddy",     // 前端 basePath（也是 API 路径前缀）
@@ -50,6 +51,8 @@ npm start
   }
 }
 ```
+
+> **注意**：`publicUrl` 用于生成路由卡片的跳转链接。如果你的 Caddy 部署在服务器上，请改为实际的域名或 IP 地址（如 `http://your-domain.com`）。
 
 ## 通过 Caddy 代理访问
 

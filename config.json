@@ -8,7 +8,7 @@
     "publicUrl": "http://localhost"
   },
   "frontend": {
-    "basePath": "/caddy",
+    "basePath": "/",
     "port": 7100
   },
   "history": {

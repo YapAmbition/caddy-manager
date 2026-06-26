@@ -19,6 +19,7 @@ const BASE_PATH = config.frontend.basePath;
 const DATA_DIR = path.join(__dirname, '..', 'data');
 const SNAPSHOTS_DIR = path.join(DATA_DIR, 'snapshots');
 const HISTORY_FILE = path.join(DATA_DIR, 'history.json');
+const APPLICATIONS_FILE = path.join(DATA_DIR, 'applications.json');
 // 指向真实的 Caddyfile 路径（Caddy 实际加载的文件）
 const CURRENT_FILE = config.caddy.caddyfilePath;
 const MAX_SNAPSHOTS = config.history.maxSnapshots;
@@ -26,6 +27,7 @@ const MAX_SNAPSHOTS = config.history.maxSnapshots;
 // Ensure directories exist
 if (!fs.existsSync(SNAPSHOTS_DIR)) fs.mkdirSync(SNAPSHOTS_DIR, { recursive: true });
 if (!fs.existsSync(HISTORY_FILE)) fs.writeFileSync(HISTORY_FILE, '[]');
+if (!fs.existsSync(APPLICATIONS_FILE)) fs.writeFileSync(APPLICATIONS_FILE, '[]');
 
 app.use(cors());
 app.use(express.json());
@@ -40,12 +42,33 @@ interface HistoryEntry {
   filename: string;
 }
 
+interface Application {
+  id: string;
+  title: string;
+  icon: {
+    type: 'emoji' | 'image' | 'gradient';
+    value: string;
+  };
+  iconText?: string;
+  iconTextColor?: string;
+  description?: string;
+  routePath: string;
+}
+
 function readHistory(): HistoryEntry[] {
   return JSON.parse(fs.readFileSync(HISTORY_FILE, 'utf-8'));
 }
 
 function writeHistory(history: HistoryEntry[]) {
   fs.writeFileSync(HISTORY_FILE, JSON.stringify(history, null, 2));
+}
+
+function readApplications(): Application[] {
+  return JSON.parse(fs.readFileSync(APPLICATIONS_FILE, 'utf-8'));
+}
+
+function writeApplications(apps: Application[]) {
+  fs.writeFileSync(APPLICATIONS_FILE, JSON.stringify(apps, null, 2));
 }
 
 function getCurrentCaddyfile(): string {
@@ -179,6 +202,78 @@ app.post(`${BASE_PATH}/api/open-config-dir`, (_req, res) => {
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
+});
+
+// --- Applications API ---
+
+// Get all applications
+app.get(`${BASE_PATH}/api/applications`, (_req, res) => {
+  const apps = readApplications();
+  res.json(apps);
+});
+
+// Create application
+app.post(`${BASE_PATH}/api/applications`, (req, res) => {
+  const { title, icon, iconText, iconTextColor, description, routePath } = req.body;
+  if (!title) {
+    return res.status(400).json({ error: 'title is required' });
+  }
+
+  const newApp: Application = {
+    id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    title,
+    icon: icon || { type: 'emoji', value: '📦' },
+    iconText: iconText || '',
+    iconTextColor: iconTextColor || '#ffffff',
+    description: description || '',
+    routePath: routePath || '',
+  };
+
+  const apps = readApplications();
+  apps.push(newApp);
+  writeApplications(apps);
+
+  res.json(newApp);
+});
+
+// Update application
+app.put(`${BASE_PATH}/api/applications/:id`, (req, res) => {
+  const { id } = req.params;
+  const { title, icon, iconText, iconTextColor, description, routePath } = req.body;
+
+  const apps = readApplications();
+  const index = apps.findIndex(a => a.id === id);
+
+  if (index === -1) {
+    return res.status(404).json({ error: 'Application not found' });
+  }
+
+  apps[index] = {
+    ...apps[index],
+    title: title ?? apps[index].title,
+    icon: icon ?? apps[index].icon,
+    iconText: iconText ?? apps[index].iconText,
+    iconTextColor: iconTextColor ?? apps[index].iconTextColor,
+    description: description ?? apps[index].description,
+    routePath: routePath ?? apps[index].routePath,
+  };
+
+  writeApplications(apps);
+  res.json(apps[index]);
+});
+
+// Delete application
+app.delete(`${BASE_PATH}/api/applications/:id`, (req, res) => {
+  const { id } = req.params;
+  const apps = readApplications();
+  const filtered = apps.filter(a => a.id !== id);
+
+  if (filtered.length === apps.length) {
+    return res.status(404).json({ error: 'Application not found' });
+  }
+
+  writeApplications(filtered);
+  res.json({ success: true });
 });
 
 // Serve frontend static files in production

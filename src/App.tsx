@@ -22,6 +22,19 @@ interface HistoryEntry {
   caddyfile?: string;
 }
 
+interface Application {
+  id: string;
+  title: string;
+  icon: {
+    type: 'emoji' | 'image' | 'gradient';
+    value: string;
+  };
+  iconText?: string;
+  iconTextColor?: string;
+  description?: string;
+  routePath: string;
+}
+
 interface Toast {
   message: string;
   type: 'success' | 'error';
@@ -148,7 +161,7 @@ function generateCaddyfile(port: string, routes: RouteRule[]): string {
 }
 
 function App() {
-  const [activeTab, setActiveTab] = useState<'routes' | 'raw' | 'history'>('routes');
+  const [activeTab, setActiveTab] = useState<'apps' | 'routes' | 'raw' | 'history'>('apps');
   const [caddyfile, setCaddyfile] = useState('');
   const [port, setPort] = useState('80');
   const [routes, setRoutes] = useState<RouteRule[]>([]);
@@ -163,6 +176,11 @@ function App() {
   const [savedRoutes, setSavedRoutes] = useState<RouteRule[]>([]);
   const hasUnsavedChanges = JSON.stringify(routes) !== JSON.stringify(savedRoutes);
   const [showDiff, setShowDiff] = useState(false);
+
+  // Applications state
+  const [applications, setApplications] = useState<Application[]>([]);
+  const [editingApp, setEditingApp] = useState<Application | null>(null);
+  const [showAppForm, setShowAppForm] = useState(false);
 
   // Prevent background scroll when modal is open
   useEffect(() => {
@@ -213,11 +231,22 @@ function App() {
     }
   }, []);
 
+  const fetchApplications = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/applications`);
+      const data = await res.json();
+      setApplications(data);
+    } catch {
+      // silently fail
+    }
+  }, []);
+
   useEffect(() => {
     fetchConfig();
     fetchHistory();
     fetchSettings();
-  }, [fetchConfig, fetchHistory, fetchSettings]);
+    fetchApplications();
+  }, [fetchConfig, fetchHistory, fetchSettings, fetchApplications]);
 
   // Warn before leaving page with unsaved changes
   useEffect(() => {
@@ -343,6 +372,49 @@ function App() {
     return `${base}${p}`;
   };
 
+  const handleAppDelete = async (id: string) => {
+    if (!confirm('确定删除该应用？')) return;
+    try {
+      await fetch(`${API_BASE}/applications/${id}`, { method: 'DELETE' });
+      fetchApplications();
+      showToast('应用已删除', 'success');
+    } catch {
+      showToast('删除失败', 'error');
+    }
+  };
+
+  const handleAppFormSubmit = async () => {
+    if (!editingApp) return;
+    if (!editingApp.title.trim()) {
+      showToast('标题不能为空', 'error');
+      return;
+    }
+
+    try {
+      if (editingApp.id) {
+        // Update
+        await fetch(`${API_BASE}/applications/${editingApp.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(editingApp),
+        });
+      } else {
+        // Create
+        await fetch(`${API_BASE}/applications`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(editingApp),
+        });
+      }
+      fetchApplications();
+      setShowAppForm(false);
+      setEditingApp(null);
+      showToast('应用已保存', 'success');
+    } catch {
+      showToast('保存失败', 'error');
+    }
+  };
+
   const formatTime = (ts: number) => {
     return new Date(ts).toLocaleString('zh-CN', {
       month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
@@ -363,6 +435,9 @@ function App() {
       </header>
 
       <div className="tabs">
+        <button className={`tab ${activeTab === 'apps' ? 'active' : ''}`} onClick={() => setActiveTab('apps')}>
+          Applications
+        </button>
         <button className={`tab ${activeTab === 'routes' ? 'active' : ''}`} onClick={() => setActiveTab('routes')}>
           Routes
         </button>
@@ -372,10 +447,269 @@ function App() {
         <button className={`tab ${activeTab === 'history' ? 'active' : ''}`} onClick={() => { setActiveTab('history'); fetchHistory(); }}>
           History ({history.length})
         </button>
+        {activeTab === 'apps' && (
+          <button className="btn btn-ghost add-route-btn" onClick={() => {
+            setEditingApp({
+              id: '',
+              title: '',
+              icon: { type: 'emoji', value: '📦' },
+              iconText: '',
+              description: '',
+              routePath: '',
+            });
+            setShowAppForm(true);
+          }}>+ Add App</button>
+        )}
         {activeTab === 'routes' && (
           <button className="btn btn-ghost add-route-btn" onClick={handleAddRoute}>+ Add Route</button>
         )}
       </div>
+
+      {/* ===== Applications Tab ===== */}
+      {activeTab === 'apps' && (
+        <div>
+          {applications.length === 0 ? (
+            <div className="empty-state">
+              <div className="icon">📱</div>
+              <h2>还没有应用</h2>
+              <p>点击右上角按钮创建第一个应用，绑定路由，快速访问你的服务</p>
+              <button className="btn btn-primary" onClick={() => {
+                setEditingApp({
+                  id: '',
+                  title: '',
+                  icon: { type: 'emoji', value: '📦' },
+                  description: '',
+                  routePath: '',
+                });
+                setShowAppForm(true);
+              }} style={{ marginTop: 16 }}>+ Add App</button>
+            </div>
+          ) : (
+            <div className="app-grid">
+              {applications.map((app) => {
+                const boundRoute = routes.find(r => r.matchPath === app.routePath);
+                const isUnbound = !app.routePath;
+                const isRouteMissing = app.routePath && !boundRoute;
+
+                const handleCardClick = () => {
+                  if (isUnbound) {
+                    showToast('该应用未绑定路由', 'error');
+                    return;
+                  }
+                  if (isRouteMissing) {
+                    showToast('绑定的路由已不存在', 'error');
+                    return;
+                  }
+                  window.open(getRouteUrl(app.routePath), '_blank');
+                };
+
+                return (
+                  <div
+                    key={app.id}
+                    className={`app-card ${isRouteMissing ? 'app-card-unbound' : ''}`}
+                    onClick={handleCardClick}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleCardClick(); }}
+                  >
+                    <div className="app-card-actions">
+                      <button className="btn-icon" onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingApp({ ...app });
+                        setShowAppForm(true);
+                      }} title="Edit">✏️</button>
+                      <button className="btn-icon" onClick={(e) => {
+                        e.stopPropagation();
+                        handleAppDelete(app.id);
+                      }} title="Delete">🗑️</button>
+                    </div>
+                    <div className="app-card-icon">
+                      {app.icon.type === 'emoji' && <span className="app-icon-emoji">{app.icon.value}</span>}
+                      {app.icon.type === 'image' && <img src={app.icon.value} alt={app.title} className="app-icon-img" />}
+                      {app.icon.type === 'gradient' && (
+                        <div className="app-icon-gradient" style={{ background: `linear-gradient(135deg, ${app.icon.value.split(',')[0] || '#7DC395'}, ${app.icon.value.split(',')[1] || '#19c8b9'})` }}>
+                          {app.iconText && <span className="app-icon-text" style={{ color: app.iconTextColor || '#fff' }}>{app.iconText}</span>}
+                        </div>
+                      )}
+                    </div>
+                    <div className="app-card-info">
+                      <div className="app-card-title">{app.title}</div>
+                      {app.description && <div className="app-card-desc">{app.description}</div>}
+                      <div className="app-card-route">
+                        {isUnbound && <span className="app-route-tag app-route-unbound">未绑定路由</span>}
+                        {isRouteMissing && <span className="app-route-tag app-route-missing">⚠ 路由已失效</span>}
+                        {boundRoute && <span className="app-route-tag">{app.routePath}</span>}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* App Form Modal */}
+          {showAppForm && editingApp && (
+            <div className="modal-overlay">
+              <div className="modal" onClick={(e) => e.stopPropagation()} style={{ width: 520 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                  <h3 style={{ margin: 0 }}>{editingApp.id ? '编辑应用' : '创建应用'}</h3>
+                  <button className="btn-icon" onClick={() => { setShowAppForm(false); setEditingApp(null); }} style={{ fontSize: '1.2rem' }}>✕</button>
+                </div>
+
+                <div className="form-group">
+                  <label>标题 *</label>
+                  <input
+                    type="text"
+                    value={editingApp.title}
+                    onChange={(e) => setEditingApp({ ...editingApp, title: e.target.value })}
+                    placeholder="例如：管理后台、API 文档..."
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>图标</label>
+                  <div className="icon-type-tabs">
+                    <button
+                      className={`icon-tab ${editingApp.icon.type === 'emoji' ? 'active' : ''}`}
+                      onClick={() => setEditingApp({ ...editingApp, icon: { type: 'emoji', value: '📦' } })}
+                    >Emoji</button>
+                    <button
+                      className={`icon-tab ${editingApp.icon.type === 'image' ? 'active' : ''}`}
+                      onClick={() => setEditingApp({ ...editingApp, icon: { type: 'image', value: '' } })}
+                    >图片</button>
+                    <button
+                      className={`icon-tab ${editingApp.icon.type === 'gradient' ? 'active' : ''}`}
+                      onClick={() => setEditingApp({ ...editingApp, icon: { type: 'gradient', value: '#7DC395,#19c8b9' } })}
+                    >渐变</button>
+                  </div>
+                  <div className="icon-preview-area">
+                    <div className="icon-preview-box">
+                      {editingApp.icon.type === 'emoji' && <span className="app-icon-emoji">{editingApp.icon.value || '📦'}</span>}
+                      {editingApp.icon.type === 'image' && editingApp.icon.value && <img src={editingApp.icon.value} alt="" className="app-icon-img" />}
+                      {editingApp.icon.type === 'image' && !editingApp.icon.value && <span className="icon-preview-placeholder">📷</span>}
+                      {editingApp.icon.type === 'gradient' && (
+                        <div className="app-icon-gradient" style={{ background: `linear-gradient(135deg, ${editingApp.icon.value.split(',')[0] || '#7DC395'}, ${editingApp.icon.value.split(',')[1] || '#19c8b9'})` }}>
+                          {editingApp.iconText && <span className="app-icon-text" style={{ color: editingApp.iconTextColor || '#fff' }}>{editingApp.iconText}</span>}
+                        </div>
+                      )}
+                    </div>
+                    <div className="icon-input-area">
+                      {editingApp.icon.type === 'emoji' && (
+                        <input
+                          type="text"
+                          value={editingApp.icon.value}
+                          onChange={(e) => setEditingApp({ ...editingApp, icon: { ...editingApp.icon, value: e.target.value } })}
+                          placeholder="输入 emoji，如 📦 🚀 🎯"
+                        />
+                      )}
+                      {editingApp.icon.type === 'image' && (
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              const reader = new FileReader();
+                              reader.onload = (ev) => {
+                                setEditingApp({ ...editingApp, icon: { ...editingApp.icon, value: ev.target?.result as string } });
+                              };
+                              reader.readAsDataURL(file);
+                            }
+                          }}
+                        />
+                      )}
+                      {editingApp.icon.type === 'gradient' && (
+                        <div className="gradient-input-wrapper">
+                          <div className="gradient-colors">
+                            <div className="gradient-color-row">
+                              <input
+                                type="color"
+                                value={editingApp.icon.value.split(',')[0] || '#7DC395'}
+                                onChange={(e) => {
+                                  const colors = editingApp.icon.value.split(',');
+                                  setEditingApp({ ...editingApp, icon: { ...editingApp.icon, value: `${e.target.value},${colors[1] || '#19c8b9'}` } });
+                                }}
+                              />
+                              <span className="color-value">{editingApp.icon.value.split(',')[0] || '#7DC395'}</span>
+                            </div>
+                            <div className="gradient-color-row">
+                              <input
+                                type="color"
+                                value={editingApp.icon.value.split(',')[1] || '#19c8b9'}
+                                onChange={(e) => {
+                                  const colors = editingApp.icon.value.split(',');
+                                  setEditingApp({ ...editingApp, icon: { ...editingApp.icon, value: `${colors[0] || '#7DC395'},${e.target.value}` } });
+                                }}
+                              />
+                              <span className="color-value">{editingApp.icon.value.split(',')[1] || '#19c8b9'}</span>
+                            </div>
+                          </div>
+                          <div className="gradient-text-row">
+                            <label style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600 }}>图标文字（0-3字）</label>
+                            <input
+                              type="text"
+                              value={editingApp.iconText || ''}
+                              maxLength={3}
+                              onChange={(e) => setEditingApp({ ...editingApp, iconText: e.target.value })}
+                              placeholder="如：API、管理"
+                              style={{ marginTop: 4 }}
+                            />
+                          </div>
+                          <div className="gradient-text-row">
+                            <label style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600 }}>文字颜色</label>
+                            <div className="color-picker-wrapper" style={{ marginTop: 4 }}>
+                              <input
+                                type="color"
+                                value={editingApp.iconTextColor || '#ffffff'}
+                                onChange={(e) => setEditingApp({ ...editingApp, iconTextColor: e.target.value })}
+                              />
+                              <span className="color-value">{editingApp.iconTextColor || '#ffffff'}</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label>简介</label>
+                  <input
+                    type="text"
+                    value={editingApp.description || ''}
+                    onChange={(e) => setEditingApp({ ...editingApp, description: e.target.value })}
+                    placeholder="一句话描述这个应用的用途"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>绑定路由</label>
+                  <select
+                    value={editingApp.routePath}
+                    onChange={(e) => setEditingApp({ ...editingApp, routePath: e.target.value })}
+                    className="route-select"
+                  >
+                    <option value="">不绑定</option>
+                    {routes.map((r) => (
+                      <option key={r.id} value={r.matchPath}>
+                        {r.comment || r.matchPath} ({r.matchPath})
+                      </option>
+                    ))}
+                  </select>
+                  <span className="form-hint">选择该应用对应的路由，点击卡片即可跳转</span>
+                </div>
+
+                <div className="modal-actions">
+                  <button className="btn btn-ghost" onClick={() => { setShowAppForm(false); setEditingApp(null); }}>取消</button>
+                  <button className="btn btn-primary" onClick={handleAppFormSubmit}>
+                    {editingApp.id ? '更新' : '创建'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ===== Routes Tab ===== */}
       {activeTab === 'routes' && (

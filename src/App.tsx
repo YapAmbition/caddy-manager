@@ -288,11 +288,6 @@ function App() {
     saveConfig(content, description || `Update routes (${routes.length} rules)`);
   };
 
-  const handleSaveRaw = () => {
-    if (!confirm('确定保存并应用配置？此操作将立即更新 Caddy 路由。')) return;
-    saveConfig(caddyfile, description || 'Manual edit');
-  };
-
   const handleAddRoute = () => {
     setEditingRoute({
       id: '',

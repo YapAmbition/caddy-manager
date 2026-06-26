@@ -15,7 +15,7 @@ const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
 const app = express();
 const PORT = config.server.port;
 const CADDY_ADMIN = config.caddy.adminApi;
-const BASE_PATH = config.frontend.basePath;
+const BASE_PATH = config.frontend.basePath === '/' ? '' : config.frontend.basePath;
 const DATA_DIR = path.join(__dirname, '..', 'data');
 const SNAPSHOTS_DIR = path.join(DATA_DIR, 'snapshots');
 const HISTORY_FILE = path.join(DATA_DIR, 'history.json');
@@ -289,5 +289,5 @@ if (fs.existsSync(distPath)) {
 app.listen(PORT, () => {
   console.log(`🚀 Caddy Manager server running at http://localhost:${PORT}`);
   console.log(`📂 Data directory: ${DATA_DIR}`);
-  console.log(`🌐 Frontend: http://localhost:${PORT}/caddy/`);
+  console.log(`🌐 Frontend: http://localhost:${PORT}${config.frontend.basePath}`);
 });

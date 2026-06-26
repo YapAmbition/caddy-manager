@@ -8,9 +8,9 @@ const serverPort = config.server.port
 
 export default defineConfig({
   plugins: [react()],
-  base: `${basePath}/`,
+  base: basePath === '/' ? '/' : `${basePath}/`,
   define: {
-    __BASE_PATH__: JSON.stringify(basePath),
+    __BASE_PATH__: JSON.stringify(basePath === '/' ? '' : basePath),
   },
   server: {
     port: config.frontend.port,

@@ -52,7 +52,8 @@ interface Application {
   iconText?: string;
   iconTextColor?: string;
   description?: string;
-  routePath: string;
+  routePath?: string;
+  url?: string;
 }
 
 function readHistory(): HistoryEntry[] {
@@ -214,7 +215,7 @@ app.get(`${BASE_PATH}/api/applications`, (_req, res) => {
 
 // Create application
 app.post(`${BASE_PATH}/api/applications`, (req, res) => {
-  const { title, icon, iconText, iconTextColor, description, routePath } = req.body;
+  const { title, icon, iconText, iconTextColor, description, routePath, url } = req.body;
   if (!title) {
     return res.status(400).json({ error: 'title is required' });
   }
@@ -227,6 +228,7 @@ app.post(`${BASE_PATH}/api/applications`, (req, res) => {
     iconTextColor: iconTextColor || '#ffffff',
     description: description || '',
     routePath: routePath || '',
+    url: url || '',
   };
 
   const apps = readApplications();
@@ -239,7 +241,7 @@ app.post(`${BASE_PATH}/api/applications`, (req, res) => {
 // Update application
 app.put(`${BASE_PATH}/api/applications/:id`, (req, res) => {
   const { id } = req.params;
-  const { title, icon, iconText, iconTextColor, description, routePath } = req.body;
+  const { title, icon, iconText, iconTextColor, description, routePath, url } = req.body;
 
   const apps = readApplications();
   const index = apps.findIndex(a => a.id === id);
@@ -256,6 +258,7 @@ app.put(`${BASE_PATH}/api/applications/:id`, (req, res) => {
     iconTextColor: iconTextColor ?? apps[index].iconTextColor,
     description: description ?? apps[index].description,
     routePath: routePath ?? apps[index].routePath,
+    url: url ?? apps[index].url,
   };
 
   writeApplications(apps);

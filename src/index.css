@@ -1349,3 +1349,91 @@ body.modal-open {
   border-color: var(--focus-yellow);
   box-shadow: 0 0 0 3px rgba(255, 204, 0, 0.15);
 }
+
+/* Animal Island UI style input for app link (URL / route select) */
+.app-link-input {
+  width: 100%;
+  height: 40px;
+  padding: 0 18px;
+  background: rgb(247, 243, 223);
+  border: 2.5px solid #c4b89e;
+  border-radius: 50px;
+  color: #725d42;
+  font-size: 14px;
+  font-weight: 500;
+  font-family: inherit;
+  outline: none;
+  box-shadow: 0 3px 0 0 #d4c9b4;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.app-link-input::placeholder {
+  color: #c4b89e;
+  font-weight: 400;
+}
+
+.app-link-input:hover {
+  transform: translateY(-1px);
+  border-color: #a89878;
+  box-shadow: 0 3px 0 0 #c4b89e;
+}
+
+.app-link-input:focus {
+  border-color: #ffcc00;
+  box-shadow:
+    0 3px 0 0 #e0b800,
+    0 0 0 3px rgba(255, 204, 0, 0.15);
+}
+
+select.app-link-input {
+  appearance: none;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23725d42' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 16px center;
+  padding-right: 38px;
+}
+
+/* Applications search bar */
+.app-search-bar {
+  position: relative;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+}
+
+.app-search-icon {
+  position: absolute;
+  left: 16px;
+  font-size: 14px;
+  color: #9f927d;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.app-link-input.app-search-input {
+  padding-left: 40px;
+  padding-right: 40px;
+}
+
+.app-search-clear {
+  position: absolute;
+  right: 14px;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: rgba(196, 184, 158, 0.4);
+  color: #725d42;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.app-search-clear:hover {
+  background: rgba(196, 184, 158, 0.7);
+}

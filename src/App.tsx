@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import ReactDiffViewer, { DiffMethod } from 'react-diff-viewer-continued';
 import './index.css';
 
@@ -32,7 +32,8 @@ interface Application {
   iconText?: string;
   iconTextColor?: string;
   description?: string;
-  routePath: string;
+  routePath?: string;
+  url?: string;
 }
 
 interface Toast {
@@ -181,6 +182,19 @@ function App() {
   const [applications, setApplications] = useState<Application[]>([]);
   const [editingApp, setEditingApp] = useState<Application | null>(null);
   const [showAppForm, setShowAppForm] = useState(false);
+  const [appLinkMode, setAppLinkMode] = useState<'route' | 'url'>('route');
+  const [appSearchQuery, setAppSearchQuery] = useState('');
+
+  const filteredApplications = useMemo(() => {
+    const q = appSearchQuery.trim().toLowerCase();
+    if (!q) return applications;
+    return applications.filter(app =>
+      app.title.toLowerCase().includes(q) ||
+      (app.description?.toLowerCase().includes(q) ?? false) ||
+      (app.routePath?.toLowerCase().includes(q) ?? false) ||
+      (app.url?.toLowerCase().includes(q) ?? false)
+    );
+  }, [applications, appSearchQuery]);
 
   // Prevent background scroll when modal is open
   useEffect(() => {
@@ -385,20 +399,32 @@ function App() {
       return;
     }
 
+    if (appLinkMode === 'url' && !editingApp.url?.trim()) {
+      showToast('URL 不能为空', 'error');
+      return;
+    }
+
+    // 根据链接模式清空另一个字段，避免歧义
+    const payload: Application = {
+      ...editingApp,
+      routePath: appLinkMode === 'url' ? '' : editingApp.routePath || '',
+      url: appLinkMode === 'route' ? '' : editingApp.url || '',
+    };
+
     try {
       if (editingApp.id) {
         // Update
         await fetch(`${API_BASE}/applications/${editingApp.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(editingApp),
+          body: JSON.stringify(payload),
         });
       } else {
         // Create
         await fetch(`${API_BASE}/applications`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(editingApp),
+          body: JSON.stringify(payload),
         });
       }
       fetchApplications();
@@ -451,7 +477,9 @@ function App() {
               iconText: '',
               description: '',
               routePath: '',
+              url: '',
             });
+            setAppLinkMode('url');
             setShowAppForm(true);
           }}>+ Add App</button>
         )}
@@ -463,11 +491,25 @@ function App() {
       {/* ===== Applications Tab ===== */}
       {activeTab === 'apps' && (
         <div>
-          {applications.length === 0 ? (
+          <div className="app-search-bar">
+            <span className="app-search-icon">🔍</span>
+            <input
+              type="text"
+              className="app-link-input app-search-input"
+              placeholder="搜索应用名称、描述、链接..."
+              value={appSearchQuery}
+              onChange={(e) => setAppSearchQuery(e.target.value)}
+            />
+            {appSearchQuery && (
+              <button className="app-search-clear" onClick={() => setAppSearchQuery('')} title="清空">✕</button>
+            )}
+          </div>
+
+          {filteredApplications.length === 0 ? (
             <div className="empty-state">
-              <div className="icon">📱</div>
-              <h2>还没有应用</h2>
-              <p>点击右上角按钮创建第一个应用，绑定路由，快速访问你的服务</p>
+              <div className="icon">🔍</div>
+              <h2>{applications.length === 0 ? '还没有应用' : '未找到匹配应用'}</h2>
+              <p>{applications.length === 0 ? '点击右上角按钮创建第一个应用，绑定路由，快速访问你的服务' : '换个关键词试试，或点击右上角创建新应用'}</p>
               <button className="btn btn-primary" onClick={() => {
                 setEditingApp({
                   id: '',
@@ -475,33 +517,40 @@ function App() {
                   icon: { type: 'emoji', value: '📦' },
                   description: '',
                   routePath: '',
+                  url: '',
                 });
+                setAppLinkMode('url');
                 setShowAppForm(true);
               }} style={{ marginTop: 16 }}>+ Add App</button>
             </div>
           ) : (
             <div className="app-grid">
-              {applications.map((app) => {
+              {filteredApplications.map((app) => {
+                const hasUrl = !!app.url?.trim();
                 const boundRoute = routes.find(r => r.matchPath === app.routePath);
-                const isUnbound = !app.routePath;
-                const isRouteMissing = app.routePath && !boundRoute;
+                const isUnbound = !hasUrl && !app.routePath;
+                const isRouteMissing = !hasUrl && !!app.routePath && !boundRoute;
 
                 const handleCardClick = () => {
                   if (isUnbound) {
-                    showToast('该应用未绑定路由', 'error');
+                    showToast('该应用未设置链接', 'error');
                     return;
                   }
                   if (isRouteMissing) {
                     showToast('绑定的路由已不存在', 'error');
                     return;
                   }
-                  window.open(getRouteUrl(app.routePath), '_blank');
+                  if (hasUrl) {
+                    window.open(app.url, '_blank');
+                  } else {
+                    window.open(getRouteUrl(app.routePath!), '_blank');
+                  }
                 };
 
                 return (
                   <div
                     key={app.id}
-                    className={`app-card ${isRouteMissing ? 'app-card-unbound' : ''}`}
+                    className={`app-card ${isRouteMissing || isUnbound ? 'app-card-unbound' : ''}`}
                     onClick={handleCardClick}
                     role="button"
                     tabIndex={0}
@@ -511,6 +560,7 @@ function App() {
                       <button className="btn-icon" onClick={(e) => {
                         e.stopPropagation();
                         setEditingApp({ ...app });
+                        setAppLinkMode(app.url?.trim() ? 'url' : 'route');
                         setShowAppForm(true);
                       }} title="Edit">✏️</button>
                       <button className="btn-icon" onClick={(e) => {
@@ -531,9 +581,10 @@ function App() {
                       <div className="app-card-title">{app.title}</div>
                       {app.description && <div className="app-card-desc">{app.description}</div>}
                       <div className="app-card-route">
-                        {isUnbound && <span className="app-route-tag app-route-unbound">未绑定路由</span>}
+                        {isUnbound && <span className="app-route-tag app-route-unbound">未设置链接</span>}
                         {isRouteMissing && <span className="app-route-tag app-route-missing">⚠ 路由已失效</span>}
-                        {boundRoute && <span className="app-route-tag">{app.routePath}</span>}
+                        {hasUrl && <span className="app-route-tag">{app.url}</span>}
+                        {boundRoute && !hasUrl && <span className="app-route-tag">{app.routePath}</span>}
                       </div>
                     </div>
                   </div>
@@ -678,20 +729,45 @@ function App() {
                 </div>
 
                 <div className="form-group">
-                  <label>绑定路由</label>
-                  <select
-                    value={editingApp.routePath}
-                    onChange={(e) => setEditingApp({ ...editingApp, routePath: e.target.value })}
-                    className="route-select"
-                  >
-                    <option value="">不绑定</option>
-                    {routes.map((r) => (
-                      <option key={r.id} value={r.matchPath}>
-                        {r.comment || r.matchPath} ({r.matchPath})
-                      </option>
-                    ))}
-                  </select>
-                  <span className="form-hint">选择该应用对应的路由，点击卡片即可跳转</span>
+                  <label>应用链接</label>
+                  <div className="icon-type-tabs" style={{ marginBottom: 12 }}>
+                    <button
+                      className={`icon-tab ${appLinkMode === 'url' ? 'active' : ''}`}
+                      onClick={() => setAppLinkMode('url')}
+                    >自定义 URL</button>
+                    <button
+                      className={`icon-tab ${appLinkMode === 'route' ? 'active' : ''}`}
+                      onClick={() => setAppLinkMode('route')}
+                    >绑定路由</button>
+                  </div>
+
+                  {appLinkMode === 'url' ? (
+                    <input
+                      type="url"
+                      className="app-link-input"
+                      value={editingApp.url || ''}
+                      onChange={(e) => setEditingApp({ ...editingApp, url: e.target.value })}
+                      placeholder="https://example.com 或 http://localhost:3000"
+                    />
+                  ) : (
+                    <select
+                      value={editingApp.routePath || ''}
+                      onChange={(e) => setEditingApp({ ...editingApp, routePath: e.target.value })}
+                      className="route-select app-link-input"
+                    >
+                      <option value="">不绑定</option>
+                      {routes.map((r) => (
+                        <option key={r.id} value={r.matchPath}>
+                          {r.comment || r.matchPath} ({r.matchPath})
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  <span className="form-hint">
+                    {appLinkMode === 'url'
+                      ? '点击卡片将直接在新标签页打开该 URL'
+                      : '选择该应用对应的路由，点击卡片跳转到对应路径'}
+                  </span>
                 </div>
 
                 <div className="modal-actions">

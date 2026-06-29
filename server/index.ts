@@ -279,6 +279,30 @@ app.delete(`${BASE_PATH}/api/applications/:id`, (req, res) => {
   res.json({ success: true });
 });
 
+// Reorder applications
+app.post(`${BASE_PATH}/api/applications/reorder`, (req, res) => {
+  const { order } = req.body;
+  if (!Array.isArray(order)) {
+    return res.status(400).json({ error: 'order must be an array of application ids' });
+  }
+
+  const apps = readApplications();
+  if (order.length !== apps.length) {
+    return res.status(400).json({ error: 'order length does not match applications count' });
+  }
+
+  const appMap = new Map(apps.map(a => [a.id, a]));
+  for (const id of order) {
+    if (!appMap.has(id)) {
+      return res.status(400).json({ error: `unknown application id: ${id}` });
+    }
+  }
+
+  const reordered = order.map(id => appMap.get(id)!);
+  writeApplications(reordered);
+  res.json({ success: true });
+});
+
 // Serve frontend static files in production
 const distPath = path.join(__dirname, '..', 'dist');
 if (fs.existsSync(distPath)) {

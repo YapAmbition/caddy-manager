@@ -1,5 +1,23 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import ReactDiffViewer, { DiffMethod } from 'react-diff-viewer-continued';
+import {
+  DndContext,
+  closestCenter,
+  DragOverlay,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  rectSortingStrategy,
+  arrayMove,
+} from '@dnd-kit/sortable';
+import { AppCard, SortableAppCard } from './components/SortableAppCard';
 import './index.css';
 
 declare const __BASE_PATH__: string;
@@ -184,6 +202,7 @@ function App() {
   const [showAppForm, setShowAppForm] = useState(false);
   const [appLinkMode, setAppLinkMode] = useState<'route' | 'url'>('route');
   const [appSearchQuery, setAppSearchQuery] = useState('');
+  const [activeDragApp, setActiveDragApp] = useState<Application | null>(null);
 
   const filteredApplications = useMemo(() => {
     const q = appSearchQuery.trim().toLowerCase();
@@ -195,6 +214,11 @@ function App() {
       (app.url?.toLowerCase().includes(q) ?? false)
     );
   }, [applications, appSearchQuery]);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
 
   // Prevent background scroll when modal is open
   useEffect(() => {
@@ -392,6 +416,76 @@ function App() {
     }
   };
 
+  const handleDragStart = (event: DragStartEvent) => {
+    const app = applications.find(a => a.id === event.active.id);
+    if (app) setActiveDragApp(app);
+  };
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    setActiveDragApp(null);
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = applications.findIndex(a => a.id === active.id);
+    const newIndex = applications.findIndex(a => a.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const newApps = arrayMove(applications, oldIndex, newIndex);
+
+    try {
+      await fetch(`${API_BASE}/applications/reorder`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order: newApps.map(a => a.id) }),
+      });
+      fetchApplications();
+    } catch {
+      showToast('排序失败', 'error');
+    }
+  };
+
+  const renderAppCard = (app: Application, sortable: boolean) => {
+    const hasUrl = !!app.url?.trim();
+    const boundRoute = routes.find(r => r.matchPath === app.routePath);
+    const isUnbound = !hasUrl && !app.routePath;
+    const isRouteMissing = !hasUrl && !!app.routePath && !boundRoute;
+
+    const handleCardClick = () => {
+      if (isUnbound) {
+        showToast('该应用未设置链接', 'error');
+        return;
+      }
+      if (isRouteMissing) {
+        showToast('绑定的路由已不存在', 'error');
+        return;
+      }
+      if (hasUrl) {
+        window.open(app.url, '_blank');
+      } else if (app.routePath) {
+        window.open(getRouteUrl(app.routePath), '_blank');
+      }
+    };
+
+    const handleEdit = () => {
+      setEditingApp({ ...app });
+      setAppLinkMode(app.url?.trim() ? 'url' : 'route');
+      setShowAppForm(true);
+    };
+
+    const cardProps = {
+      app,
+      routes,
+      getRouteUrl,
+      onClick: handleCardClick,
+      onEdit: handleEdit,
+      onDelete: () => handleAppDelete(app.id),
+    };
+
+    return sortable
+      ? <SortableAppCard key={app.id} {...cardProps} />
+      : <AppCard key={app.id} {...cardProps} />;
+  };
+
   const handleAppFormSubmit = async () => {
     if (!editingApp) return;
     if (!editingApp.title.trim()) {
@@ -523,74 +617,39 @@ function App() {
                 setShowAppForm(true);
               }} style={{ marginTop: 16 }}>+ Add App</button>
             </div>
-          ) : (
+          ) : appSearchQuery ? (
             <div className="app-grid">
-              {filteredApplications.map((app) => {
-                const hasUrl = !!app.url?.trim();
-                const boundRoute = routes.find(r => r.matchPath === app.routePath);
-                const isUnbound = !hasUrl && !app.routePath;
-                const isRouteMissing = !hasUrl && !!app.routePath && !boundRoute;
-
-                const handleCardClick = () => {
-                  if (isUnbound) {
-                    showToast('该应用未设置链接', 'error');
-                    return;
-                  }
-                  if (isRouteMissing) {
-                    showToast('绑定的路由已不存在', 'error');
-                    return;
-                  }
-                  if (hasUrl) {
-                    window.open(app.url, '_blank');
-                  } else {
-                    window.open(getRouteUrl(app.routePath!), '_blank');
-                  }
-                };
-
-                return (
-                  <div
-                    key={app.id}
-                    className={`app-card ${isRouteMissing || isUnbound ? 'app-card-unbound' : ''}`}
-                    onClick={handleCardClick}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => { if (e.key === 'Enter') handleCardClick(); }}
-                  >
-                    <div className="app-card-actions">
-                      <button className="btn-icon" onClick={(e) => {
-                        e.stopPropagation();
-                        setEditingApp({ ...app });
-                        setAppLinkMode(app.url?.trim() ? 'url' : 'route');
-                        setShowAppForm(true);
-                      }} title="Edit">✏️</button>
-                      <button className="btn-icon" onClick={(e) => {
-                        e.stopPropagation();
-                        handleAppDelete(app.id);
-                      }} title="Delete">🗑️</button>
-                    </div>
-                    <div className="app-card-icon">
-                      {app.icon.type === 'emoji' && <span className="app-icon-emoji">{app.icon.value}</span>}
-                      {app.icon.type === 'image' && <img src={app.icon.value} alt={app.title} className="app-icon-img" />}
-                      {app.icon.type === 'gradient' && (
-                        <div className="app-icon-gradient" style={{ background: `linear-gradient(135deg, ${app.icon.value.split(',')[0] || '#7DC395'}, ${app.icon.value.split(',')[1] || '#19c8b9'})` }}>
-                          {app.iconText && <span className="app-icon-text" style={{ color: app.iconTextColor || '#fff' }}>{app.iconText}</span>}
-                        </div>
-                      )}
-                    </div>
-                    <div className="app-card-info">
-                      <div className="app-card-title">{app.title}</div>
-                      {app.description && <div className="app-card-desc">{app.description}</div>}
-                      <div className="app-card-route">
-                        {isUnbound && <span className="app-route-tag app-route-unbound">未设置链接</span>}
-                        {isRouteMissing && <span className="app-route-tag app-route-missing">⚠ 路由已失效</span>}
-                        {hasUrl && <span className="app-route-tag">{app.url}</span>}
-                        {boundRoute && !hasUrl && <span className="app-route-tag">{app.routePath}</span>}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+              {filteredApplications.map(app => renderAppCard(app, false))}
             </div>
+          ) : (
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragStart={handleDragStart}
+              onDragEnd={handleDragEnd}
+            >
+              <SortableContext
+                items={applications.map(a => a.id)}
+                strategy={rectSortingStrategy}
+              >
+                <div className="app-grid">
+                  {filteredApplications.map(app => renderAppCard(app, true))}
+                </div>
+              </SortableContext>
+              <DragOverlay dropAnimation={{ duration: 200, easing: 'cubic-bezier(0.18, 0.67, 0.6, 1.22)' }}>
+                {activeDragApp ? (
+                  <AppCard
+                    app={activeDragApp}
+                    routes={routes}
+                    getRouteUrl={getRouteUrl}
+                    onClick={() => {}}
+                    onEdit={() => {}}
+                    onDelete={() => {}}
+                    className="app-card-overlay"
+                  />
+                ) : null}
+              </DragOverlay>
+            </DndContext>
           )}
 
           {/* App Form Modal */}

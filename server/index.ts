@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { type ErrorRequestHandler } from 'express';
 import cors from 'cors';
 import path from 'path';
 import fs from 'fs';
@@ -30,8 +30,18 @@ if (!fs.existsSync(HISTORY_FILE)) fs.writeFileSync(HISTORY_FILE, '[]');
 if (!fs.existsSync(APPLICATIONS_FILE)) fs.writeFileSync(APPLICATIONS_FILE, '[]');
 
 app.use(cors());
-app.use(express.json());
+// Application icons are sent as base64 data URLs in JSON.
+app.use(express.json({ limit: '10mb' }));
 app.use(express.text({ type: 'text/plain' }));
+
+const handleBodyParserError: ErrorRequestHandler = (err, _req, res, next) => {
+  if (err.type === 'entity.too.large') {
+    res.status(413).json({ error: '提交内容过大，请缩小图片后重试（JSON 请求上限 10 MB）' });
+    return;
+  }
+  next(err);
+};
+app.use(handleBodyParserError);
 
 // --- Helper functions ---
 

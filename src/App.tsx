@@ -506,27 +506,24 @@ function App() {
     };
 
     try {
-      if (editingApp.id) {
-        // Update
-        await fetch(`${API_BASE}/applications/${editingApp.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-      } else {
-        // Create
-        await fetch(`${API_BASE}/applications`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
+      const endpoint = editingApp.id
+        ? `${API_BASE}/applications/${editingApp.id}`
+        : `${API_BASE}/applications`;
+      const response = await fetch(endpoint, {
+        method: editingApp.id ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        const result = await response.json().catch(() => null);
+        throw new Error(result?.error || `保存失败（HTTP ${response.status}）`);
       }
       fetchApplications();
       setShowAppForm(false);
       setEditingApp(null);
       showToast('应用已保存', 'success');
-    } catch {
-      showToast('保存失败', 'error');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '保存失败', 'error');
     }
   };
 

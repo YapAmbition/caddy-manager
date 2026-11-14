@@ -15,7 +15,7 @@ export default defineConfig({
   server: {
     port: config.frontend.port,
     proxy: {
-      [`${basePath}/api`]: {
+      [`${basePath === '/' ? '' : basePath}/api`]: {
         target: `http://localhost:${serverPort}`,
         changeOrigin: true,
       },
